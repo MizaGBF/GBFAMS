@@ -58,6 +58,7 @@ class Task():
                 if self.max_id != -1 and self.id > self.max_id:
                     return
                 if self.dupe and id in self.parent.data[self.key]:
+                    self.errc = 0
                     continue
 
             found = False
@@ -120,7 +121,7 @@ class Datamine():
                     {
                         "path": ["sp/assets/npc/zoom/"],
                         "prefix": ["304"],
-                        "suffix": ["000_01.png"]
+                        "suffix": ["000_01.png", "000_03.png"]
                     },
                     {
                         "path": ["sp/assets/npc/raid_normal/"],
