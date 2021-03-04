@@ -4,7 +4,6 @@ from urllib.parse import unquote
 import os
 import sys
 import json
-import csv
 import concurrent.futures
 from threading import Thread, Lock
 from queue import Queue
@@ -17,11 +16,12 @@ class Task():
         self.lock = Lock()
         self.id = start
         self.errc = 0
-        self.max_thread = 8
+        self.max_thread = 6
+        self.stopping_thread = 0
+        self.running = True
         self.key = key
         self.rsc = self.parent.rsc[key]
         self.count = count
-        self.running = True
         self.max_id = self.rsc.get("max_id", -1)
         self.use_db = use_db
         self.dupe = dupe
@@ -31,22 +31,29 @@ class Task():
         self.pause = False
 
     def run(self):
+        print("Starting searching for", self.rsc["name"])
         if self.key not in self.parent.data:
             self.parent.data[self.key] = []
             self.parent.savePending = True
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_thread) as executor:
             futures = [executor.submit(self.worker) for i in range(self.max_thread)]
-            try:
-                for future in concurrent.futures.as_completed(futures):
-                    future.result()
-            except KeyboardInterrupt:
-                print("Forced stop")
-                self.running = False
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
         print(self.rsc["name"], ":", len(self.urls), "positive result(s)")
         return self.urls
 
     def worker(self):
+        running = True
         while self.running:
+            if not running:
+                time.sleep(0.001)
+                if self.stopping_thread >= self.max_thread:
+                    return
+                with self.lock:
+                    if self.errc == 0:
+                        self.stopping_thread = 0
+                        running = True
+                continue
             with self.lock:
                 if not self.running: return
                 id = self.id
@@ -66,6 +73,7 @@ class Task():
                 for path in im["path"]:
                     for prefix in im["prefix"]:
                         for suffix in im["suffix"]:
+                            if not self.running: return
                             url = self.parent.endpoint + self.parent.lang[self.parent.settings['lang']] + self.parent.quality[self.parent.settings['quality']] + path
                             file = prefix
                             if "zfill" in self.rsc: file += str(id).zfill(self.rsc["zfill"])
@@ -94,7 +102,8 @@ class Task():
                                     if im is self.rsc["images"][-1] and path is im["path"][-1] and prefix is im["prefix"][-1] and suffix is im["suffix"][-1]:
                                         self.errc += 1
                                         if self.errc >= self.rsc.get("max_err", 40):
-                                            self.running = False
+                                            self.stopping_thread += 1
+                                            running = False
                             if found: break
                         if found: break
                     if found: break
@@ -222,12 +231,12 @@ class Datamine():
                 "name": "NPC",
                 "max_id" : 9999,
                 "zfill" : 4,
-                "max_err": 30,
+                "max_err": 50,
                 "images": [
                     {
                         "path": ["sp/quest/scene/character/body/"],
                         "prefix": ["399"],
-                        "suffix": ["000.png"]
+                        "suffix": ["000.png", "000_laugh.png", "000_laugh2.png", "000_sad.png", "000_angry.png", "000_school.png", "000_a.png", "000_shadow.png", "000_close.png", "000_serious.png", "000_shout.png", "000_surprise.png", "000_surprise2.png", "000_think.png", "000_serious.png", "000_a.png", "000_a_up.png", "000_body.png"]
                     }
                 ]
             },
@@ -609,6 +618,7 @@ class Datamine():
             with open('data.json', 'w') as outfile:
                 json.dump(self.data, outfile)
             print("data.json updated")
+            self.savePending = False
             return True
         except Exception as e:
             print("Failed to save data.json")
@@ -689,6 +699,7 @@ class Datamine():
             break
 
     def auto(self):
+        savedisk = True
         options = {}
         table = []
         for k in self.rsc:
@@ -698,7 +709,7 @@ class Datamine():
             choices = []
             for k in self.rsc:
                 choices.append([str(len(choices)), "[{}] ".format("X" if options[k] else " ") + self.rsc[k]['name']])
-            choices += [["S", "Select All"], ["C", "Cancel All"], ["M", "Start mining"], ["Any Key", "Back"]]
+            choices += [["D", "[{}] Save on Disk".format("X" if savedisk else " ")], ["S", "Select All"], ["C", "Cancel All"], ["M", "Start mining"], ["Any Key", "Back"]]
             s = self.menu("\nWhat to mine?", choices, False)
             try:
                 options[table[int(s)]] = not options[table[int(s)]]
@@ -707,6 +718,8 @@ class Datamine():
                     for k in options: options[k] = True
                 elif s.lower() == "c":
                     for k in options: options[k] = False
+                elif s.lower() == "d":
+                    savedisk = not savedisk
                 elif s.lower() == "m":
                     tasks = {}
                     for k in options:
@@ -714,7 +727,7 @@ class Datamine():
                             if k in self.data and len(self.data[k]) > 0: start = self.data[k][-1]
                             else: start = self.rsc[k].get("min_id", 0)
                             start = max(0, start-10)
-                            tasks[k] = Task(self, k, start, -1, True, True, True, True)
+                            tasks[k] = Task(self, k, start, -1, True, True, savedisk, True)
                     if len(tasks) == 0:
                         print("Please select what to mine")
                     else:
@@ -723,6 +736,7 @@ class Datamine():
                             futures = [executor.submit(tasks[k].run) for k in tasks]
                             for future in concurrent.futures.as_completed(futures):
                                 future.result()
+                        return
                 else:
                     return
 
@@ -776,7 +790,7 @@ class Datamine():
 
     def start(self):
         # we start HERE
-        print("GBF Asset Mining Script v1.1")
+        print("Granblue Fantasy Asset Mining Script v1.2")
 
         self.load() # load the settings
         print("Proxy check...")
@@ -788,6 +802,7 @@ class Datamine():
         while self.loop(): # loop as long as loop() returns true
             pass
         self.save() # save the settings
+        self.saveData() # save the db if there is any change left
 
     def request(self, url):
         if self.hasProxy:
