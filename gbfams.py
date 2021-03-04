@@ -119,8 +119,13 @@ class Datamine():
                 "images": [
                     {
                         "path": ["sp/assets/npc/zoom/"],
-                        "prefix": ["304", "374", "384"],
+                        "prefix": ["304"],
                         "suffix": ["000_01.png"]
+                    },
+                    {
+                        "path": ["sp/assets/npc/raid_normal/"],
+                        "prefix": ["304", "374", "384"],
+                        "suffix": ["000_01.jpg"]
                     }
                 ]
             },
@@ -132,8 +137,13 @@ class Datamine():
                 "images": [
                     {
                         "path": ["sp/assets/npc/zoom/"],
-                        "prefix": ["303", "373", "383"],
+                        "prefix": ["303"],
                         "suffix": ["000_01.png"]
+                    },
+                    {
+                        "path": ["sp/assets/npc/raid_normal/"],
+                        "prefix": ["303", "373", "383"],
+                        "suffix": ["000_01.jpg"]
                     }
                 ]
             },
@@ -145,8 +155,13 @@ class Datamine():
                 "images": [
                     {
                         "path": ["sp/assets/npc/zoom/"],
-                        "prefix": ["302", "372", "382"],
+                        "prefix": ["302"],
                         "suffix": ["000_01.png"]
+                    },
+                    {
+                        "path": ["sp/assets/npc/raid_normal/"],
+                        "prefix": ["302", "372", "382"],
+                        "suffix": ["000_01.jpg"]
                     }
                 ]
             },
@@ -760,7 +775,7 @@ class Datamine():
 
     def start(self):
         # we start HERE
-        print("GBF Asset Mining Script v1.0")
+        print("GBF Asset Mining Script v1.1")
 
         self.load() # load the settings
         print("Proxy check...")
