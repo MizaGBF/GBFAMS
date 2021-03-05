@@ -9,6 +9,9 @@ from threading import Thread, Lock
 from queue import Queue
 import time
 import pyperclip
+import re
+import zlib
+from PIL import Image, ImageFont, ImageDraw
 
 class Task():
     def __init__(self, parent, key, start, count, use_db, dupe, save, silent):
@@ -117,6 +120,11 @@ class Datamine():
                 self.data = json.load(f)
         except:
             self.data = {}
+        try:
+            with open('secret.json') as f:
+                self.secret = json.load(f)
+        except:
+            self.secret = None
         self.endpoint = "http://game-a.granbluefantasy.jp/"
         self.lang = ["assets/", "assets_en/"]
         self.quality = ["img_low/", "img_mid/", "img/"]
@@ -588,6 +596,7 @@ class Datamine():
         }
         self.hasProxy = False
         self.running = False
+        self.vregex = re.compile("Game\.version = \"(\d+)\";")
 
     # called once at the start
     def load(self):
@@ -762,8 +771,9 @@ class Datamine():
     # main loop
     def loop(self):
         # MAIN MENU
+        choices = [["0", "Manual"], ["1", "Auto"], ["2", "Settings"]]
         while True:
-            s = self.menu("\nMain menu", [["0", "Manual"], ["1", "Auto"], ["2", "Settings"], ["Any Key", "Exit"]], False)
+            s = self.menu("\nMain menu", choices + ([["S", "Advanced"]] if self.secret is not None else []) + [["Any Key", "Exit"]], False)
             # SUB MENU ################################################################
             if s == "0":
                 if not self.hasProxy:
@@ -785,12 +795,14 @@ class Datamine():
                 self.saveData()
             elif s == "2":
                 self.modifySettings()
+            elif s.lower() == "s" and self.secret is not None:
+                self.advanced()
             else: # quit
                 return
 
     def start(self):
         # we start HERE
-        print("Granblue Fantasy Asset Mining Script v1.2")
+        print("Granblue Fantasy Asset Mining Script v1.3")
 
         self.load() # load the settings
         print("Proxy check...")
@@ -804,14 +816,14 @@ class Datamine():
         self.save() # save the settings
         self.saveData() # save the db if there is any change left
 
-    def request(self, url):
+    def request(self, url, headers = {}):
         if self.hasProxy:
             prx = request.ProxyHandler({'http': self.settings['proxy']})
             opener = request.build_opener(prx)
-            req = request.Request(url)
+            req = request.Request(url, headers=headers)
             return opener.open(req)
         else:
-            req = request.Request(url)
+            req = request.Request(url, headers=headers)
             return request.urlopen(req)
 
     # proxy check
@@ -879,6 +891,166 @@ class Datamine():
         if not self.hasProxy:
             return "Disabled"
         return self.settings['proxy']
+
+    def getGameversion(self): # retrieve the game version
+        handler = self.request('http://game.granbluefantasy.jp/', headers={'User-Agent':'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36', 'Accept-Language':'en', 'Accept-Encoding':'gzip, deflate', 'Host':'game.granbluefantasy.jp', 'Connection':'keep-alive'})
+        try:
+            res = zlib.decompress(handler.read(), 16+zlib.MAX_WBITS)
+            return int(self.vregex.findall(str(res))[0])
+        except:
+            return None
+
+    def advanced(self):
+        id = input("Please input an ID: ")
+        try:
+            if len(id) != 10: raise Exception()
+            print("Checking", int(id))
+        except:
+            print("Invalid ID")
+            return
+        if id[0] == '3': type = 0
+        elif id[0] == '2': type = 1
+        elif id[0] == '1': type = 2
+        else:
+            print("Unknown ID type")
+            return
+        try:
+            files = self.secret["files"]
+            it = self.secret["it"]
+        except:
+            print("Invalid secret.json")
+            return 
+        
+        ver = self.getGameversion()
+        if ver is None:
+            print("Can't access the Game Version")
+            return 
+        else:
+            print("Game version is", ver)
+
+        iul = {}
+        try:
+            font = ImageFont.truetype("font.ttf", 16)
+        except:
+            print("A file is missing")
+            return
+        for f in files[type]:
+            ff = f[0] + id + f[1]
+            uu = self.secret["base"].format(ff).replace("VER", str(ver))
+            try:
+                handler = self.request(uu)
+                data = str(handler.read())
+
+                print(ff, "found, processing...")
+
+                root = []
+                ref = root
+                stack = []
+                dupelist = []
+                match = 0
+                rcs = []
+                imc = 1
+                wd = 0
+                ht = 0
+                current = data.find("{", 0) + 1
+
+                while current < len(data):
+                    c = data[current]
+                    if c == ff[match]:
+                        match += 1
+                        if match == len(ff):
+                            if data[current+1] == '_':
+                                x = current+2
+                                while x < len(data) and (data[x] == '_' or data[x].isalnum()):
+                                    x += 1
+                                n = data[current+2:x]
+                                if len(n) == 1:
+                                    if n == "b":
+                                        rcs[-1][-1] = 1
+                                        if imc < 2: imc = 2
+                                    elif n == "c":
+                                        rcs[-1][-1] = 2
+                                        if imc < 3: imc = 3
+                                elif n != "" and (len(ref) == 0 or(len(ref) > 0 and ref[-1] != n)):
+                                    ref.append(n)
+                                    if n not in dupelist:
+                                        dupelist.append(n)
+                                        sub = n.split('_')
+                                current = x - 1
+                            match = 0
+                    else:
+                        match = 0
+                        if c == '{':
+                            ref.append([])
+                            stack.append(ref)
+                            ref = ref[-1]
+                        elif c == '}':
+                            try:
+                                ref = stack[-1]
+                                if len(ref[-1]) == 0:
+                                    ref.pop()
+                                stack.pop()
+                            except:
+                                pass
+                        elif len(stack) == 1:
+                            sstr = data[current:]
+                            if sstr.startswith("Rectangle("):
+                                lp = sstr.find(")")
+                                try:
+                                    rc = sstr[len("Rectangle("):lp].split(',')
+                                    rc = [int(ir.replace('1e3', '1000')) for ir in rc]
+                                    for p in rc:
+                                        if p < 0: raise Exception()
+                                    if sum(rc) == 0:
+                                        raise Exception()
+                                    rc[2] += rc[0]
+                                    rc[3] += rc[1]
+                                    if rc[2] > wd: wd = rc[2]
+                                    if rc[3] > ht: ht = rc[3]
+                                    rc.append(stack[-1][-2])
+                                    rc.append(0)
+                                    rcs.append(rc)
+                                except:
+                                    pass
+                    current += 1
+                i = Image.new('RGB', (wd*imc+200,ht+200), "black")
+                d = ImageDraw.Draw(i)
+                txcs = []
+                for rc in rcs:
+                    try:
+                        fill = None
+                        for q in it:
+                            if fill is not None: break
+                            for sfql in q[-1]:
+                                if sfql in rc[4].lower():
+                                    fill = (q[0],q[1],q[2])
+                                    break
+                        rc[0] += rc[5]*wd
+                        rc[2] += rc[5]*wd
+                        d.rectangle(rc[:4],fill=fill,outline=(140,140,140))
+                        txcs.append([rc[0], rc[1], rc[4]])
+                    except:
+                        pass
+                rcs.clear()
+                txsb = []
+                for txc in txcs:
+                    bss = txc[:-1]
+                    tss = font.getsize(txc[2])
+                    bbx = [bss[0], bss[1], bss[0]+tss[0], bss[1]+tss[1]]
+                    for tbx in txsb:
+                        if bbx[0] < tbx[2] and tbx[0] < bbx[2] and bbx[1] < tbx[3] and tbx[1] < bbx[3]:
+                            diff = tbx[3] - bbx[1]
+                            bbx[1] += diff
+                            bbx[3] += diff
+                    txsb.append(bbx)
+                    try: d.text((bbx[0], bbx[1]),txc[2],font=font,fill=(255,255,255))
+                    except: pass
+                txsb.clear()
+                txcs.clear()
+                self.folderCheck(str(id))
+                i.save(str(id) + "/{}.png".format(ff), "PNG")
+            except:
+                pass
 
 if __name__ == '__main__':
     d = Datamine()
