@@ -802,7 +802,7 @@ class Datamine():
 
     def start(self):
         # we start HERE
-        print("Granblue Fantasy Asset Mining Script v1.3")
+        print("Granblue Fantasy Asset Mining Script v1.4")
 
         self.load() # load the settings
         print("Proxy check...")
@@ -934,6 +934,7 @@ class Datamine():
         except:
             print("A file is missing")
             return
+        textdump = ""
         for f in files[type]:
             ff = f[0] + id + f[1]
             uu = self.secret["base"].format(ff).replace("VER", str(ver))
@@ -942,6 +943,7 @@ class Datamine():
                 data = str(handler.read())
 
                 print(ff, "found, processing...")
+                textdump += '# {} ############################################\r\n'.format(ff)
 
                 root = []
                 ref = root
@@ -1013,6 +1015,7 @@ class Datamine():
                                 except:
                                     pass
                     current += 1
+                textdump += self.pa(root, 0)
                 i = Image.new('RGB', (wd*imc+200,ht+200), "black")
                 d = ImageDraw.Draw(i)
                 txcs = []
@@ -1051,6 +1054,25 @@ class Datamine():
                 i.save(str(id) + "/{}.png".format(ff), "PNG")
             except:
                 pass
+        if len(textdump) > 0:
+            self.folderCheck(str(id))
+            with open(str(id) + "/{}.txt".format(ff), "w") as f:
+                f.write(textdump)
+
+    def pa(self, a, indent):
+        s = ""
+        if indent > 0:
+            s = "|"
+            for i in range(0, indent): s += "-"
+            s += " "
+        res = ""
+        for c in a:
+            if isinstance(c, list):
+                res += self.pa(c, indent+1)
+            else:
+                res += s+c+'\r\n'
+        if indent == 0: res += '\r\n'
+        return res
 
 if __name__ == '__main__':
     d = Datamine()
